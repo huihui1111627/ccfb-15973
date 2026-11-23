@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>机房备件需求预测与库存策略</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">◧</span>
+    <div>
+      <h1>机房备件需求预测与库存策略</h1>
+      <p id="subtitle">加载中…</p>
+    </div>
+  </div>
+  <nav id="tabs">
+    <button data-tab="overview" class="active">总览</button>
+    <button data-tab="demand">需求预测</button>
+    <button data-tab="life">寿命与故障</button>
+    <button data-tab="network">库存网络</button>
+    <button data-tab="lastbuy">停产件</button>
+    <button data-tab="logs">缺货与调拨</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ------------------------------------------------------------ OVERVIEW -->
+  <section id="tab-overview" class="tab active">
+    <div id="headline" class="cards"></div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>三种策略对比</h2>
+        <p class="muted">同一批故障、同一套交期，跑满仿真期。成本含持有、订货、调拨运费、缺货损失与停产件最后采购。</p>
+      </div>
+      <table id="policy-table" class="grid"></table>
+      <div class="charts two">
+        <div class="chart-box"><h3>各策略运营成本</h3><div id="chart-cost" class="chart"></div></div>
+        <div class="chart-box"><h3>各策略：缺货次数 / 平均等待天数</h3><div id="chart-outcome" class="chart"></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>预测置信区间校准</h2>
+        <p class="muted">用截断前数据做的滚动回测：名义 80% 区间实际覆盖了多少、名义 50% 又覆盖多少。这是我们愿意公开的诚实数字，不是挑出来的。</p>
+      </div>
+      <div id="calibration" class="cards"></div>
+      <div class="charts two">
+        <div class="chart-box"><h3>每月预测 vs 实际</h3><div id="chart-calib" class="chart"></div></div>
+        <div class="chart-box"><h3>分零件预测/实际比</h3><div id="chart-calib-part" class="chart"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- DEMAND -->
+  <section id="tab-demand" class="tab">
+    <div class="toolbar">
+      <label>机房 <select id="sel-site"><option value="">全部</option></select></label>
+      <label>零件 <select id="sel-part"><option value="">全部</option></select></label>
+      <button id="btn-refresh" class="primary">刷新</button>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>月度需求预测 <span id="fc-scope" class="pill"></span></h2>
+        <p class="muted">蓝色为预测均值，浅带为 90% 预测区间（负二项）。需求来自寿命模型在装机基座上的滚动推算，含换件后的再失效。</p>
+      </div>
+      <div id="chart-forecast" class="chart tall"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>各机房 × 零件的年化需求与已装量</h2>
+        <p class="muted">按年化预测排序；区间为 90% 预测带。点击行可筛选上方图表。</p>
+      </div>
+      <div class="scroll"><table id="fc-table" class="grid small"></table></div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- LIFE -->
+  <section id="tab-life" class="tab">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>寿命分布拟合（按机型 / 批次 / 年限）</h2>
+        <p class="muted">威布尔磨损失效 + 随机失效底噪声；经验曲线按年龄段给出，虚线为参数拟合。括号内是仿真真值，用于核对还原度。</p>
+      </div>
+      <div class="scroll"><table id="life-table" class="grid small"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>故障率随年限的曲线 <span id="life-part" class="pill"></span></h2>
+        <p class="muted">随使用年限先低后高；批次好坏与机房环境把整体水平拉开。</p>
+      </div>
+      <div id="chart-hazard" class="chart tall"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>机型 / 机房 / 批次 乘数</h2>
+        <p class="muted">热负载机型（GPU）与高温地区故障率更高；批次乘数反映同批次的优劣，收缩后只让有证据的批次偏离 1。</p>
+      </div>
+      <div class="charts two">
+        <div class="chart-box"><h3>机房乘数（按零件）</h3><div id="chart-site-mult" class="chart"></div></div>
+        <div class="chart-box"><h3>批次质量分布</h3><div id="chart-lot" class="chart"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------- NETWORK -->
+  <section id="tab-network" class="tab">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>两级库存结构</h2>
+        <p class="muted">供应商 → 区域中心仓 → 机房前置仓。前置仓缺货时从中心仓调拨；中心仓也空时尝试邻区中心仓或同区机房横向调拨。</p>
+      </div>
+      <div class="network" id="network"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>每机房每备件的补货点与安全库存 <span id="param-scope" class="pill"></span></h2>
+        <p class="muted">这是最终要落地的那张表：补货点 rop（低于它下单）、目标水位 S、安全库存 S−rop、该件的缺货率目标，以及两级网络下的中心仓水位。<br>策略对比里三种策略用的是同一套仿真与故障流，差别只在这些数字。</p>
+      </div>
+      <div class="scroll" style="max-height:560px"><table id="param-table" class="grid small"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>分级库存选择</h2>
+        <p class="muted">“每级放多少”不是一个拍脑袋的参数：对前置仓承担的风险比例与安全库存系数做小网格仿真，取满足服务目标的最便宜配置（✓ 为达标，加粗为选中）。</p>
+      </div>
+      <div class="scroll" style="max-height:280px"><table id="split-table" class="grid small"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>库存水位（仿真期末）</h2>
+        <p class="muted">每格为该机房该零件的期末现货；颜色越深水位越高，红边表示该组合当前缺货。</p>
+      </div>
+      <div class="heatwrap"><div id="heatmap" class="heatmap"></div><div class="legend" id="heat-legend"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>库存价值随时间</h2>
+        <p class="muted">期末持仓价值走势；两级库存的资本占用。</p>
+      </div>
+      <div id="chart-inv" class="chart tall"></div>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- LASTBUY -->
+  <section id="tab-lastbuy" class="tab">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>停产零件的最后一次采购</h2>
+        <p class="muted">计划采购量 = 到最后一台服务器退役前总需求的 90% 分位（长尾再叠加“水平不确定性”）；<br>右侧为仿真跑完后用真实故障链核对的实际尾段需求、剩余与短缺。</p>
+      </div>
+      <table id="lastbuy-table" class="grid"></table>
+    </div>
+    <div class="charts two">
+      <div class="chart-box"><h3>各停产件：计划量 vs 实际消耗</h3><div id="chart-lastbuy" class="chart"></div></div>
+      <div class="chart-box"><h3>剩余 / 短缺</h3><div id="chart-lastbuy-resid" class="chart"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>采购分位的取舍</h2>
+        <p class="muted">同一个尾段需求模型，取不同的分位做采购量：分位越高越不容易短缺，但退役时剩下的也越多。加粗行为当前采用。</p>
+      </div>
+      <table id="lastbuy-targets" class="grid"></table>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------------- LOGS -->
+  <section id="tab-logs" class="tab">
+    <div class="toolbar">
+      <label>策略
+        <select id="sel-policy">
+          <option value="ours">两级网络+调拨</option>
+          <option value="hist">历史均值补货</option>
+          <option value="fixed">固定数量备件</option>
+        </select>
+      </label>
+      <span id="log-count" class="pill"></span>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>缺货事件</h2><p class="muted">服务器等备件下线的记录；时间以仿真起点为 0。</p></div>
+      <div class="scroll"><table id="stockout-table" class="grid small"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>调拨记录</h2><p class="muted">中心仓、邻区中心仓与同区横向调拨；含运输时间。</p></div>
+      <div class="scroll"><table id="transfer-table" class="grid small"></table></div>
+    </div>
+  </section>
+</main>
+
+<footer><span id="footer-note"></span></footer>
+<script src="/app.js"></script>
+</body>
+</html>
